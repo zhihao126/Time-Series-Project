@@ -1,4 +1,4 @@
-# Time-Series-Project
+# Time-Series-Project: Team Fein!
 
 # Forecasting Microsoft's Stock Price
 
