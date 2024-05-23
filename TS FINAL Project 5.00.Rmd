@@ -1,0 +1,522 @@
+---
+title: "TS Final Project Code"
+date: "2024-05-21"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+```
+
+Step 1: Loading the Data and Initial Setup
+
+Here, we have loaded the dataset and inspected the first few rows.
+
+For EDA, we convert the Date column to Date type, and check for missing
+values. We do summary statistics for numerical columns, visualize the
+closing prices over time, and check for stationarity using the Augmented
+Dickey-Fuller (ADF) test. We also calculate correlation matrix for
+analysis.
+
+Step 2: Exploratory Data Analysis (EDA)
+
+2.1 Check for Missing Values 2.2 Summary Statistics 2.3 Visualize the
+Data 2.4 Stationarity Check 2.5 Correlation Analysis
+
+Here's the R code for performing these steps:
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(lubridate)
+library(TTR)
+library(forecast)
+library(tseries)
+library(xts)
+library(zoo)
+library(corrplot)
+library(ggplot2)
+
+# Load the data
+data <- read.csv("/Users/zhihaoluo/Desktop/MSADS/2024 Spring/ADSP 31006 Time Series Analysis and Forecasting/Final Project/Microsoft Stocks.csv")
+
+# Convert Date column to Date type
+data$Date <- dmy(data$Date)
+
+# Inspect the structure of the data
+str(data)
+
+# Check for missing values
+summary(data)
+
+# Summary statistics for numerical columns
+summary(data %>% select(-Date))
+
+# Plot the closing prices over time
+ggplot(data, aes(x = Date, y = Price)) + 
+  geom_line() + 
+  labs(title = "Microsoft Stock Closing Prices Over Time", x = "Date", y = "Closing Price")
+
+# Perform ADF test
+adf.test(data$Price)
+
+# Calculate correlation matrix
+cor_matrix <- cor(data %>% select(-Date))
+corrplot(cor_matrix, method = "circle")
+# Autocorrelation plot for prices
+acf(data$Price, main="Autocorrelation of Microsoft Stock Prices")
+
+```
+
+Step 3: Data Processing
+
+3.1 Anomaly Detection and Cleansing We will detect anomalies using a
+boxplot method and remove them. We'll also check for and impute any
+missing values.
+
+3.2 Data Transformation We will transform the data to make it stationary
+by differencing the time series.
+
+Step 4: Feature Engineering
+
+We will create lagged features to incorporate the time dependency in our
+models.
+
+Step 5: Proposed Models and Justifications
+
+We will consider ARIMA, SARIMA, TBATS, and other advanced models such as
+ARMA-GARCH for forecasting.
+
+# Model Summary Testing
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(lubridate)
+library(TTR)
+library(forecast)
+library(tseries)
+library(xts)
+library(zoo)
+library(corrplot)
+library(ggplot2)
+library(fGarch)
+
+data <- read.csv("/Users/zhihaoluo/Desktop/MSADS/2024 Spring/ADSP 31006 Time Series Analysis and Forecasting/Final Project/Microsoft Stocks.csv")
+
+# Convert Date column to Date type
+data$Date <- as.Date(data$Date, format="%m/%d/%Y")
+
+# Anomaly detection using boxplot method for Closing prices
+boxplot_stats <- boxplot.stats(data$Price)
+outliers <- boxplot_stats$out
+
+# Remove outliers
+data_clean <- data[!(data$Price %in% outliers), ]
+
+# Check for missing values and impute if necessary (apply to numeric columns only)
+data_clean <- data_clean %>%
+  mutate(across(where(is.numeric), ~na.approx(.)))
+
+# Differencing to make the series stationary
+data_clean <- data_clean %>% 
+  arrange(Date) %>% 
+  mutate(Price_diff = c(NA, diff(Price)))
+
+# Remove NA values introduced by differencing
+data_clean <- data_clean %>% drop_na()
+
+# Recheck stationarity after differencing
+adf_test_result <- adf.test(data_clean$Price_diff)
+
+# Create lagged features
+data_clean <- data_clean %>%
+  mutate(Price_lag1 = lag(Price, 1),
+         Price_lag2 = lag(Price, 2),
+         Volume_lag1 = lag(Volume, 1),
+         Volume_lag2 = lag(Volume, 2)) %>%
+  drop_na()
+
+```
+
+# ARIMA - Rita Cui
+
+```{r}
+# Load necessary libraries
+library(forecast)
+library(ggplot2)
+library(lubridate)
+# Fit ARIMA model
+arima_model <- auto.arima(data_clean$Price)
+summary(arima_model)
+
+# Forecast using ARIMA model
+forecast_arima <- forecast(arima_model, h = 12)
+autoplot(forecast_arima) +
+  labs(title = "ARIMA Model Forecast for Microsoft Stock Prices",
+       x = "Time", 
+       y = "Stock Price") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# SARIMA - Serena Zhao
+
+```{r}
+# Fit SARIMA model
+# Fit SARIMA model
+sarima_model <- auto.arima(data_clean$Price, seasonal = TRUE)
+summary(sarima_model)
+# Forecast using SARIMA model
+forecast_sarima <- forecast(sarima_model, h = 30)
+autoplot(forecast_sarima) +
+  labs(title = "SARIMA Model Forecast for Microsoft Stock Prices",
+       x = "Time", 
+       y = "Stock Price") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+# Holt-Winters - Rita Cui
+
+```{r}
+# Holt-Winters Forecasting
+# Convert Date to Date type if not already done
+data$Date <- as.Date(data$Date, format="%m/%d/%Y")
+
+# Convert data to time series object with frequency 252 (approximate number of trading days in a year)
+data_ts <- ts(data_clean$Price, frequency = 252)
+
+# Fit Holt-Winters model
+hw_model <- HoltWinters(data_ts)
+
+# Forecast using Holt-Winters model
+forecast_hw <- forecast(hw_model, h = 30)
+
+# Create a data frame for plotting
+forecast_dates <- seq(max(data_clean$Date) + 1, by = "day", length.out = length(forecast_hw$mean))
+forecast_data <- data.frame(Date = forecast_dates, Forecast = as.numeric(forecast_hw$mean))
+
+# Plot the actual prices and forecasts
+ggplot() +
+  geom_line(data = data_clean, aes(x = Date, y = Price), color = "blue", size = 1) +
+  geom_line(data = forecast_data, aes(x = Date, y = Forecast), color = "red", size = 1, linetype = "dashed") +
+  labs(title = "Holt-Winters Model Forecast for Microsoft Stock Prices",
+       x = "Date",
+       y = "Stock Price") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+```{r}
+# Fit Exponential Smoothing model
+ets_model <- ets(data_clean$Price)
+summary(ets_model)
+
+# Forecast using ETS model
+forecast_ets <- forecast(ets_model, h = 30)
+autoplot(forecast_ets) +
+  labs(title = "Exponential Smoothing Model Forecast for Microsoft Stock Prices",
+       x = "Time", 
+       y = "Stock Price") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Fit TBATS model
+tbats_model <- tbats(data_clean$Price)
+summary(tbats_model)
+
+# Forecast using TBATS model
+forecast_tbats <- forecast(tbats_model, h = 30)
+autoplot(forecast_tbats) +
+  labs(title = "TBATS Model Forecast for Microsoft Stock Prices", 
+       x = "Time", 
+       y = "Stock Price") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Compare models using accuracy metrics
+accuracy_arima <- accuracy(forecast_arima)
+accuracy_sarima <- accuracy(forecast_sarima)
+accuracy_ets <- accuracy(forecast_ets)
+accuracy_tbats <- accuracy(forecast_tbats)
+
+list(
+  ADF_Test_Result = adf_test_result,
+  Accuracy_ARIMA = accuracy_arima,
+  Accuracy_SARIMA = accuracy_sarima,
+  Accuracy_ETS = accuracy_ets,
+  Accuracy_TBATS = accuracy_tbats
+)
+
+# Fit ARMA model
+arma_fit <- arima(data$Price, order=c(1,0,1)) 
+
+# Extract residuals
+arma_resid <- residuals(arma_fit)
+
+# Fit GARCH model to ARMA residuals
+garch_fit <- garchFit(~ garch(1,1), data = arma_resid)
+
+# Summary of the GARCH model
+summary(garch_fit)
+
+# Forecasting
+forecast <- predict(garch_fit, n.ahead=10)
+print(forecast)
+
+# Create a data frame for plotting
+forecast_dates <- seq(max(data$Date) + 1, by = "day", length.out = 10)
+forecast_data <- data.frame(Date = forecast_dates, Forecast = forecast$meanForecast)
+
+# Plot the actual prices and forecasts
+ggplot() +
+  geom_line(data = data, aes(x = Date, y = Price), color = "blue", size = 1) +
+  geom_line(data = forecast_data, aes(x = Date, y = Forecast), color = "red", size = 1, linetype = "dashed") +
+  labs(title = "Microsoft Stock Prices with ARMA-GARCH Forecast",
+       x = "Date",
+       y = "Price") +
+  theme_minimal()
+
+```
+
+# TBATS - Steven Luo
+
+```{r}
+
+# Convert Date column to Date type
+data$Date <- as.Date(data$Date, format="%m/%d/%Y")
+
+# Anomaly detection using boxplot method for Closing prices
+boxplot_stats <- boxplot.stats(data$Price)
+outliers <- boxplot_stats$out
+
+# Remove outliers
+data_clean <- data[!(data$Price %in% outliers), ]
+
+# Check for missing values and impute if necessary (apply to numeric columns only)
+data_clean <- data_clean %>%
+  mutate(across(where(is.numeric), ~na.approx(.)))
+
+# Differencing to make the series stationary
+data_clean <- data_clean %>% 
+  arrange(Date) %>% 
+  mutate(Price_diff = c(NA, diff(Price)))
+
+# Remove NA values introduced by differencing
+data_clean <- data_clean %>% drop_na()
+
+# Recheck stationarity after differencing
+adf_test_result <- adf.test(data_clean$Price_diff)
+
+# Create lagged features
+data_clean <- data_clean %>%
+  mutate(Price_lag1 = lag(Price, 1),
+         Price_lag2 = lag(Price, 2),
+         Volume_lag1 = lag(Volume, 1),
+         Volume_lag2 = lag(Volume, 2)) %>%
+  drop_na()
+
+# Fit TBATS model
+tbats_model <- tbats(ts(data_clean$Price, frequency = 365))
+
+# Display the model summary
+summary(tbats_model)
+
+# Forecast using TBATS model
+forecast_tbats <- forecast(tbats_model, h = 30)
+
+# Create a data frame with actual dates for the forecast
+forecast_dates <- seq.Date(from = max(data_clean$Date) + 1, by = "day", length.out = 30)
+forecast_tbats_df <- data.frame(Date = forecast_dates, Forecast = forecast_tbats$mean)
+
+# Plot the forecast with actual dates and set y-axis limit
+ggplot() +
+  geom_line(data = data_clean, aes(x = Date, y = Price), color = "blue", size = 1) +
+  geom_line(data = forecast_tbats_df, aes(x = Date, y = Forecast), color = "red", size = 1, linetype = "dashed") +
+  labs(title = "TBATS Model Forecast for Microsoft Stock Prices",
+       x = "Date",
+       y = "Stock Price") +
+  ylim(0, 120) +
+  theme_minimal()
+```
+
+```{r}
+# Load necessary libraries
+library(readr)
+library(ggplot2)
+library(forecast)
+library(dplyr)
+library(zoo)
+
+# Convert Date column to Date type
+data$Date <- as.Date(data$Date, format="%m/%d/%Y")
+
+# Anomaly detection using boxplot method for Closing prices
+boxplot_stats <- boxplot.stats(data$Price)
+outliers <- boxplot_stats$out
+
+# Remove outliers
+data_clean <- data[!(data$Price %in% outliers), ]
+
+# Check for missing values and impute if necessary (apply to numeric columns only)
+data_clean <- data_clean %>%
+  mutate(across(where(is.numeric), ~na.approx(.)))
+
+# Differencing to make the series stationary
+data_clean <- data_clean %>% 
+  arrange(Date) %>% 
+  mutate(Price_diff = c(NA, diff(Price)))
+
+# Remove NA values introduced by differencing
+data_clean <- data_clean %>% drop_na()
+
+# Recheck stationarity after differencing
+adf_test_result <- adf.test(data_clean$Price_diff)
+
+# Create lagged features
+data_clean <- data_clean %>%
+  mutate(Price_lag1 = lag(Price, 1),
+         Price_lag2 = lag(Price, 2),
+         Volume_lag1 = lag(Volume, 1),
+         Volume_lag2 = lag(Volume, 2)) %>%
+  drop_na()
+
+# Fit TBATS model
+tbats_model <- tbats(ts(data_clean$Price, frequency = 365))
+
+# Display the model summary
+summary(tbats_model)
+
+# Forecast using TBATS model
+forecast_tbats <- forecast(tbats_model, h = 30)
+
+# Calculate residuals
+residuals_tbats <- residuals(tbats_model)
+
+# Calculate error metrics
+me <- mean(residuals_tbats)
+rmse <- sqrt(mean(residuals_tbats^2))
+mae <- mean(abs(residuals_tbats))
+mpe <- mean(residuals_tbats / data_clean$Price * 100)
+mape <- mean(abs(residuals_tbats / data_clean$Price) * 100)
+
+# MASE calculation
+# Naive forecast: One-step ahead naive forecast (random walk)
+naive_forecast <- rwf(data_clean$Price, h=1)
+
+# Calculate the in-sample naive forecast residuals manually
+naive_residuals <- data_clean$Price[-1] - data_clean$Price[-length(data_clean$Price)]
+
+# Calculate the in-sample MAE of the naive forecast
+mae_naive <- mean(abs(naive_residuals))
+
+# Calculate MASE
+mase <- mae / mae_naive
+
+# Autocorrelation of residuals at lag 1
+acf1 <- acf(residuals_tbats, plot = FALSE)$acf[2]
+
+# Print the error metrics
+cat("Mean Error (ME):", me, "\n")
+cat("Root Mean Square Error (RMSE):", rmse, "\n")
+cat("Mean Absolute Error (MAE):", mae, "\n")
+cat("Mean Percentage Error (MPE):", mpe, "\n")
+cat("Mean Absolute Percentage Error (MAPE):", mape, "\n")
+cat("Mean Absolute Scaled Error (MASE):", mase, "\n")
+cat("Autocorrelation of Residuals at Lag 1 (ACF1):", acf1, "\n")
+```
+
+#ARMA-GARCH Zhengqi Sun
+
+```{r}
+# Install and load required packages
+install.packages("fGarch")
+library(fGarch)
+
+# Load the data
+data <- read.csv("/Users/zhihaoluo/Desktop/MSADS/2024 Spring/ADSP 31006 Time Series Analysis and Forecasting/Final Project/Microsoft Stocks.csv")
+
+# Convert Date to Date object
+data$Date <- as.Date(data$Date, format="%m/%d/%Y")
+
+# Ensure Price is numeric
+data$Price <- as.numeric(data$Price)
+
+# Fit ARMA model
+arma_fit <- arima(data$Price, order=c(1,0,1))  # Adjust the order as necessary
+
+# Extract residuals
+arma_resid <- residuals(arma_fit)
+
+# Fit GARCH model to ARMA residuals
+garch_fit <- garchFit(~ garch(1,1), data = arma_resid)
+
+# Summary of the GARCH model
+summary(garch_fit)
+
+# Forecasting
+forecast <- predict(garch_fit, n.ahead=10)
+print(forecast)
+
+library(ggplot2)
+
+# Create a data frame for plotting
+forecast_dates <- seq(max(data$Date) + 1, by = "day", length.out = 10)
+forecast_data <- data.frame(Date = forecast_dates, Forecast = forecast$meanForecast)
+
+# Plot the actual prices and forecasts
+ggplot() +
+  geom_line(data = data, aes(x = Date, y = Price), color = "blue", size = 1) +
+  geom_line(data = forecast_data, aes(x = Date, y = Forecast), color = "red", size = 1, linetype = "dashed") +
+  labs(title = "Microsoft Stock Prices with ARMA-GARCH Forecast",
+       x = "Date",
+       y = "Price") +
+  theme_minimal()
+```
+
+```{r}
+library(fGarch)
+library(forecast)
+library(Metrics)
+# Check for missing values and handle them if necessary
+data <- na.omit(data)
+
+# Fit ARMA model (determine the best order using auto.arima for simplicity)
+arma_fit <- auto.arima(data$Price, seasonal = FALSE)
+
+# Extract residuals from ARMA model
+arma_resid <- residuals(arma_fit)
+
+# Fit GARCH model to the residuals of the ARMA model
+garch_fit <- garchFit(~ garch(1, 1), data = arma_resid, trace = FALSE)
+
+# Summary of the GARCH model
+summary(garch_fit)
+
+# Generate ARMA in-sample forecast
+arma_in_sample_forecast <- fitted(arma_fit)
+
+# Forecast GARCH model on in-sample data
+garch_in_sample_forecast <- fitted(garch_fit)
+
+# Combine ARMA and GARCH in-sample forecasts
+combined_in_sample_forecast <- arma_in_sample_forecast + garch_in_sample_forecast
+
+# Calculate Error Measures on Training Set
+
+# RMSE (Root Mean Squared Error)
+rmse_value <- rmse(data$Price, combined_in_sample_forecast)
+
+# MAPE (Mean Absolute Percentage Error)
+mape_value <- mape(data$Price, combined_in_sample_forecast)
+
+# MASE (Mean Absolute Scaled Error)
+mase_value <- mase(data$Price, combined_in_sample_forecast)
+
+# Print error measures
+cat("RMSE: ", rmse_value, "\n")
+cat("MAPE: ", mape_value, "\n")
+cat("MASE: ", mase_value, "\n")
+```
